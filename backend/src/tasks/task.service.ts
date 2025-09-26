@@ -4,7 +4,7 @@ import { Repository, Like, FindManyOptions } from 'typeorm';
 import { CreateTaskDto } from 'src/dto/create-task.dto';
 import { QueryTaskDto } from 'src/dto/query-task.dto';
 import { UpdateTaskDto } from 'src/dto/update-task.dto';
-import { Task, TaskStatus } from 'src/entities/task.entity';
+import { Task, TaskStatus } from '../entities/task.entity';
 
 
 @Injectable()
@@ -150,7 +150,7 @@ export class TasksService {
   private async calculateEstimates(task: Task): Promise<Task> {
     if (task.subtasks && task.subtasks.length > 0) {
       // Cargar subtareas recursivamente si no están cargadas
-      const subtasksWithSubtasks = await Promise.all(
+      const subtasksWithEstimates = await Promise.all(
         task.subtasks.map(async (subtask) => {
           const fullSubtask = await this.tasksRepository.findOne({
             where: { id: subtask.id },
@@ -160,22 +160,27 @@ export class TasksService {
         })
       );
 
-      // Calcular estimaciones por estado
-      const pendingEstimate = subtasksWithSubtasks
-        .filter(subtask => [TaskStatus.BACKLOG, TaskStatus.UNSTARTED].includes(subtask.status))
-        .reduce((sum, subtask) => sum + (subtask.estimate || 0), 0);
+     // Sumar numéricamente estimaciones pendientes e inProgress
+      const pendingEstimate = subtasksWithEstimates
+        .filter(s => [TaskStatus.BACKLOG, TaskStatus.UNSTARTED].includes(s.status))
+        .reduce((sum, s) => sum + Number(s.estimate || 0), 0);
 
-      const inProgressEstimate = subtasksWithSubtasks
-        .filter(subtask => subtask.status === TaskStatus.STARTED)
-        .reduce((sum, subtask) => sum + (subtask.estimate || 0), 0);
+      const inProgressEstimate = subtasksWithEstimates
+        .filter(s => s.status === TaskStatus.STARTED)
+        .reduce((sum, s) => sum + Number(s.estimate || 0), 0);
 
-      const totalEstimate = subtasksWithSubtasks
-        .reduce((sum, subtask) => sum + (subtask.estimate || 0), 0);
+      // Sumar estimado total: estimado de la tarea padre + suma de subtareas
+      const subtasksTotalEstimate = subtasksWithEstimates
+        .reduce((sum, s) => sum + Number(s.estimate || 0), 0);
 
+      const parentEstimate = Number(task.estimate) || 0;
+
+      const totalEstimate = parentEstimate + subtasksTotalEstimate;
       task.pendingEstimate = pendingEstimate;
       task.inProgressEstimate = inProgressEstimate;
       task.totalEstimate = totalEstimate;
-      task.subtasks = subtasksWithSubtasks;
+      task.subtasks = subtasksWithEstimates;
+      
     } else {
       task.pendingEstimate = 0;
       task.inProgressEstimate = 0;

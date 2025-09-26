@@ -39,13 +39,7 @@ export default function RootLayout({
                   >
                     Tareas
                   </a>
-                  <a 
-                    href="/api/docs" 
-                    target="_blank"
-                    className="text-gray-600 hover:text-gray-900 transition-colors"
-                  >
-                    API Docs
-                  </a>
+                  
                 </nav>
               </div>
             </div>
