@@ -1,0 +1,74 @@
+# backend/Dockerfile
+FROM node:18-alpine AS base
+
+# Instalar dependencias del sistema necesarias
+RUN apk add --no-cache     libc6-compat     openssl     ca-certificates
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+FROM base AS development
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3001
+
+# Start the application in development mode
+CMD ["npm", "run", "start:dev"]
+
+FROM base AS build
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+FROM base AS production
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Copy built application from build stage
+COPY --from=build /app/dist ./dist
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nestjs -u 1001
+
+# Change ownership of the app directory to the nestjs user
+RUN chown -R nestjs:nodejs /app
+USER nestjs
+
+# Expose port
+EXPOSE 3001
+
+# Start the application
+CMD ["node", "dist/main"]

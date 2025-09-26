@@ -1,0 +1,73 @@
+# frontend/Dockerfile
+FROM node:18-slim AS base
+
+# Install system dependencies needed for native modules
+RUN apt-get update && apt-get install -y \
+    libc6-dev \
+    gcc \
+    g++ \
+    make \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies only when needed
+FROM base AS deps
+# Check https://github.com/nodejs/docker-node to understand why libc6-compat might be needed.
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+RUN npm ci
+
+# Rebuild the source code only when needed
+FROM base AS development
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies including dev dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Start the development server
+CMD ["npm", "run", "dev"]
+
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build the app
+RUN npm run build
+
+# Production image, copy all the files and run next
+FROM base AS production
+WORKDIR /app
+
+ENV NODE_ENV production
+# Disable Next.js telemetry
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+
+# Automatically leverage output traces to reduce image size
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"]
